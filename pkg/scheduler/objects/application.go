@@ -1682,9 +1682,10 @@ func (sa *Application) decUserResourceUsage(resource *resources.Resource, remove
 
 // Track used and preempted resources
 func (sa *Application) trackCompletedResource(info *Allocation) {
-	if info.IsPreempted() {
+	switch {
+	case info.IsPreempted():
 		sa.updatePreemptedResource(info)
-	} else {
+	default:
 		sa.updateUsedResource(info)
 	}
 }
