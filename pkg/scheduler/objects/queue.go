@@ -208,6 +208,7 @@ func newDynamicQueueInternal(name string, leaf bool, parent *Queue) (*Queue, err
 
 // applyTemplate uses input template to initialize properties, maxResource, and guaranteedResource
 func (sq *Queue) applyTemplate(childTemplate *template.Template) {
+	sq.maxRunningApps = childTemplate.GetMaxApplications()
 	sq.properties = childTemplate.GetProperties()
 	// the resources in template are already checked
 	sq.guaranteedResource = childTemplate.GetGuaranteedResource()
@@ -360,6 +361,7 @@ func (sq *Queue) setResources(resource configs.Resources) error {
 	maxResource, err := resources.NewResourceFromConf(resource.Max)
 	if err != nil {
 		log.Log(log.SchedQueue).Error("parsing failed on max resources this should not happen",
+			zap.String("queue", sq.QueuePath),
 			zap.Error(err))
 		return err
 	}
@@ -368,30 +370,62 @@ func (sq *Queue) setResources(resource configs.Resources) error {
 	guaranteedResource, err = resources.NewResourceFromConf(resource.Guaranteed)
 	if err != nil {
 		log.Log(log.SchedQueue).Error("parsing failed on guaranteed resources this should not happen",
+			zap.String("queue", sq.QueuePath),
 			zap.Error(err))
 		return err
 	}
 
-	if resources.StrictlyGreaterThanZero(maxResource) {
+	switch {
+	case resources.StrictlyGreaterThanZero(maxResource):
+		log.Log(log.SchedQueue).Debug("setting max resources",
+			zap.String("queue", sq.QueuePath),
+			zap.Stringer("current", sq.maxResource),
+			zap.Stringer("new", maxResource))
 		if !resources.Equals(sq.maxResource, maxResource) && sq.queueEvents != nil {
 			sq.queueEvents.sendMaxResourceChangedEvent()
 		}
 		sq.maxResource = maxResource
 		sq.updateMaxResourceMetrics()
-	} else {
-		log.Log(log.SchedQueue).Debug("max resources setting ignored: cannot set zero max resources")
+	case sq.maxResource != nil:
+		log.Log(log.SchedQueue).Debug("setting max resources",
+			zap.String("queue", sq.QueuePath),
+			zap.Stringer("current", sq.maxResource),
+			zap.Stringer("new", maxResource))
+		if sq.queueEvents != nil {
+			sq.queueEvents.sendMaxResourceChangedEvent()
+		}
+		sq.maxResource = nil
+		sq.updateMaxResourceMetrics()
+	default:
+		log.Log(log.SchedQueue).Warn("max resources setting ignored: cannot set zero max resources",
+			zap.String("queue", sq.QueuePath))
 	}
 
-	if resources.StrictlyGreaterThanZero(guaranteedResource) {
+	switch {
+	case resources.StrictlyGreaterThanZero(guaranteedResource):
+		log.Log(log.SchedQueue).Debug("setting guaranteed resources",
+			zap.String("queue", sq.QueuePath),
+			zap.Stringer("current", sq.guaranteedResource),
+			zap.Stringer("new", guaranteedResource))
 		if !resources.Equals(sq.guaranteedResource, guaranteedResource) && sq.queueEvents != nil {
 			sq.queueEvents.sendGuaranteedResourceChangedEvent()
 		}
 		sq.guaranteedResource = guaranteedResource
 		sq.updateGuaranteedResourceMetrics()
-	} else {
-		log.Log(log.SchedQueue).Debug("guaranteed resources setting ignored: cannot set zero max resources")
+	case sq.guaranteedResource != nil:
+		log.Log(log.SchedQueue).Debug("setting guaranteed resources",
+			zap.String("queue", sq.QueuePath),
+			zap.Stringer("current", sq.guaranteedResource),
+			zap.Stringer("new", guaranteedResource))
+		if sq.queueEvents != nil {
+			sq.queueEvents.sendGuaranteedResourceChangedEvent()
+		}
+		sq.guaranteedResource = nil
+		sq.updateGuaranteedResourceMetrics()
+	default:
+		log.Log(log.SchedQueue).Warn("guaranteed resources setting ignored: cannot set zero guaranteed resources",
+			zap.String("queue", sq.QueuePath))
 	}
-
 	return nil
 }
 
@@ -608,6 +642,7 @@ func (sq *Queue) GetPartitionQueueDAOInfo() dao.PartitionQueueDAOInfo {
 	queueInfo.GuaranteedResource = sq.guaranteedResource.DAOMap()
 	queueInfo.AllocatedResource = sq.allocatedResource.DAOMap()
 	queueInfo.PreemptingResource = sq.preemptingResource.DAOMap()
+	queueInfo.HeadRoom = sq.getHeadRoom().DAOMap()
 	queueInfo.IsLeaf = sq.isLeaf
 	queueInfo.IsManaged = sq.isManaged
 	queueInfo.CurrentPriority = sq.getCurrentPriority()
@@ -1265,8 +1300,32 @@ func (sq *Queue) SetMaxResource(max *resources.Resource) {
 	log.Log(log.SchedQueue).Info("updating root queue max resources",
 		zap.Stringer("current max", sq.maxResource),
 		zap.Stringer("new max", max))
-	sq.maxResource = max.Clone()
-	sq.updateMaxResourceMetrics()
+
+	switch {
+	case resources.StrictlyGreaterThanZero(max):
+		log.Log(log.SchedQueue).Debug("setting max resources",
+			zap.String("queue", sq.QueuePath),
+			zap.Stringer("current", sq.maxResource),
+			zap.Stringer("new", max))
+		if !resources.Equals(sq.maxResource, max) && sq.queueEvents != nil {
+			sq.queueEvents.sendMaxResourceChangedEvent()
+		}
+		sq.maxResource = max.Clone()
+		sq.updateMaxResourceMetrics()
+	case sq.maxResource != nil:
+		log.Log(log.SchedQueue).Debug("setting max resources",
+			zap.String("queue", sq.QueuePath),
+			zap.Stringer("current", sq.maxResource),
+			zap.Stringer("new", max))
+		if sq.queueEvents != nil {
+			sq.queueEvents.sendMaxResourceChangedEvent()
+		}
+		sq.maxResource = nil
+		sq.updateMaxResourceMetrics()
+	default:
+		log.Log(log.SchedQueue).Warn("max resources setting ignored: cannot set zero max resources",
+			zap.String("queue", sq.QueuePath))
+	}
 }
 
 // canRunApp returns if the queue could run a new app for this queue (recursively).
@@ -1311,7 +1370,7 @@ func (sq *Queue) TryAllocate(iterator func() NodeIterator, fullIterator func() N
 			}
 			alloc := app.tryAllocate(headRoom, allowPreemption, preemptionDelay, &preemptAttemptsRemaining, iterator, fullIterator, getnode)
 			if alloc != nil {
-				log.Log(log.SchedQueue).Debug("allocation found on queue",
+				log.Log(log.SchedQueue).Info("allocation found on queue",
 					zap.String("queueName", sq.QueuePath),
 					zap.String("appID", app.ApplicationID),
 					zap.Stringer("allocation", alloc))
@@ -1347,7 +1406,7 @@ func (sq *Queue) TryPlaceholderAllocate(iterator func() NodeIterator, getnode fu
 		for _, app := range sq.sortApplications(true, true) {
 			alloc := app.tryPlaceholderAllocate(iterator, getnode)
 			if alloc != nil {
-				log.Log(log.SchedQueue).Debug("allocation found on queue",
+				log.Log(log.SchedQueue).Info("allocation found on queue",
 					zap.String("queueName", sq.QueuePath),
 					zap.String("appID", app.ApplicationID),
 					zap.Stringer("allocation", alloc))
@@ -1418,7 +1477,7 @@ func (sq *Queue) TryReservedAllocate(iterator func() NodeIterator) *Allocation {
 				}
 				alloc := app.tryReservedAllocate(headRoom, iterator)
 				if alloc != nil {
-					log.Log(log.SchedQueue).Debug("reservation found for allocation found on queue",
+					log.Log(log.SchedQueue).Info("reservation found for allocation found on queue",
 						zap.String("queueName", sq.QueuePath),
 						zap.String("appID", appID),
 						zap.Stringer("allocation", alloc),

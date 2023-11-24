@@ -492,7 +492,9 @@ func checkHealthStatus(w http.ResponseWriter, r *http.Request) {
 	if result != nil {
 		if !result.Healthy {
 			log.Log(log.SchedHealth).Error("Scheduler is not healthy", zap.Any("health check info", *result))
-			buildJSONErrorResponse(w, "Scheduler is not healthy", http.StatusServiceUnavailable)
+			if err := json.NewEncoder(w).Encode(result); err != nil {
+				buildJSONErrorResponse(w, err.Error(), http.StatusInternalServerError)
+			}
 		} else {
 			log.Log(log.SchedHealth).Info("Scheduler is healthy", zap.Any("health check info", *result))
 			if err := json.NewEncoder(w).Encode(result); err != nil {
@@ -912,29 +914,25 @@ func getEvents(w http.ResponseWriter, r *http.Request) {
 	var start uint64
 
 	if countStr := r.URL.Query().Get("count"); countStr != "" {
-		c, err := strconv.ParseInt(countStr, 10, 64)
+		var err error
+		count, err = strconv.ParseUint(countStr, 10, 64)
 		if err != nil {
 			buildJSONErrorResponse(w, err.Error(), http.StatusBadRequest)
 			return
 		}
-		if c <= 0 {
-			buildJSONErrorResponse(w, fmt.Sprintf("Illegal number of events: %d", c), http.StatusBadRequest)
+		if count == 0 {
+			buildJSONErrorResponse(w, `0 is not a valid value for "count"`, http.StatusBadRequest)
 			return
 		}
-		count = uint64(c)
 	}
 
 	if startStr := r.URL.Query().Get("start"); startStr != "" {
-		i, err := strconv.ParseInt(startStr, 10, 64)
+		var err error
+		start, err = strconv.ParseUint(startStr, 10, 64)
 		if err != nil {
 			buildJSONErrorResponse(w, err.Error(), http.StatusBadRequest)
 			return
 		}
-		if i < 0 {
-			buildJSONErrorResponse(w, fmt.Sprintf("Illegal id: %d", i), http.StatusBadRequest)
-			return
-		}
-		start = uint64(i)
 	}
 
 	records, lowestID, highestID := eventSystem.GetEventsFromID(start, count)

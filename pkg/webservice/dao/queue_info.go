@@ -18,6 +18,7 @@ limitations under the License.
 package dao
 
 type TemplateInfo struct {
+	MaxApplications    uint64            `json:"maxApplications,omitempty"`
 	MaxResource        map[string]int64  `json:"maxResource,omitempty"`
 	GuaranteedResource map[string]int64  `json:"guaranteedResource,omitempty"`
 	Properties         map[string]string `json:"properties,omitempty"`
@@ -32,6 +33,7 @@ type PartitionQueueDAOInfo struct {
 	GuaranteedResource     map[string]int64        `json:"guaranteedResource,omitempty"`
 	AllocatedResource      map[string]int64        `json:"allocatedResource,omitempty"`
 	PreemptingResource     map[string]int64        `json:"preemptingResource,omitempty"`
+	HeadRoom               map[string]int64        `json:"headroom,omitempty"`
 	IsLeaf                 bool                    `json:"isLeaf"`    // no omitempty, a false value gives a quick way to understand whether it's leaf.
 	IsManaged              bool                    `json:"isManaged"` // no omitempty, a false value gives a quick way to understand whether it's managed.
 	Properties             map[string]string       `json:"properties,omitempty"`
