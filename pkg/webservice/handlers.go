@@ -34,6 +34,8 @@ import (
 	"go.uber.org/zap"
 	"gopkg.in/yaml.v3"
 
+	"github.com/golang/snappy"
+
 	"github.com/apache/yunikorn-core/pkg/common"
 	"github.com/apache/yunikorn-core/pkg/common/configs"
 	"github.com/apache/yunikorn-core/pkg/common/resources"
@@ -46,7 +48,6 @@ import (
 	"github.com/apache/yunikorn-core/pkg/scheduler/objects"
 	"github.com/apache/yunikorn-core/pkg/scheduler/ugm"
 	"github.com/apache/yunikorn-core/pkg/webservice/dao"
-	"github.com/golang/snappy"
 )
 
 const (
@@ -634,7 +635,6 @@ func getQueueApplications(w http.ResponseWriter, r *http.Request) {
 func getCompressedQueueApplications(w http.ResponseWriter, r *http.Request) {
 	writeHeaders(w)
 	w.Header().Set("Content-Type", "text/plain")
-//	w.Header().Set("Content-Encoding", "snappy")
 
 	vars := httprouter.ParamsFromContext(r.Context())
 	if vars == nil {
@@ -664,7 +664,10 @@ func getCompressedQueueApplications(w http.ResponseWriter, r *http.Request) {
 		appsDao = append(appsDao, getApplicationDAO(app))
 	}
 
-	response, _ := json.Marshal(appsDao)
+	response, err := json.Marshal(appsDao)
+	if err != nil {
+		buildJSONErrorResponse(w, err.Error(), http.StatusBadRequest)
+	}
 	comp := snappy.Encode(nil, response)
 
 	defer func() {
