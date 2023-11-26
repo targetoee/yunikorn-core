@@ -46,6 +46,7 @@ import (
 	"github.com/apache/yunikorn-core/pkg/scheduler/objects"
 	"github.com/apache/yunikorn-core/pkg/scheduler/ugm"
 	"github.com/apache/yunikorn-core/pkg/webservice/dao"
+	"github.com/golang/snappy"
 )
 
 const (
@@ -626,6 +627,53 @@ func getQueueApplications(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := json.NewEncoder(w).Encode(appsDao); err != nil {
+		buildJSONErrorResponse(w, err.Error(), http.StatusInternalServerError)
+	}
+}
+
+func getCompressedQueueApplications(w http.ResponseWriter, r *http.Request) {
+	writeHeaders(w)
+	w.Header().Set("Content-Type", "text/plain")
+//	w.Header().Set("Content-Encoding", "snappy")
+
+	vars := httprouter.ParamsFromContext(r.Context())
+	if vars == nil {
+		buildJSONErrorResponse(w, MissingParamsName, http.StatusBadRequest)
+		return
+	}
+	partition := vars.ByName("partition")
+	queueName := vars.ByName("queue")
+	queueErr := validateQueue(queueName)
+	if queueErr != nil {
+		buildJSONErrorResponse(w, queueErr.Error(), http.StatusBadRequest)
+		return
+	}
+	partitionContext := schedulerContext.GetPartitionWithoutClusterID(partition)
+	if partitionContext == nil {
+		buildJSONErrorResponse(w, PartitionDoesNotExists, http.StatusBadRequest)
+		return
+	}
+	queue := partitionContext.GetQueue(queueName)
+	if queue == nil {
+		buildJSONErrorResponse(w, QueueDoesNotExists, http.StatusBadRequest)
+		return
+	}
+
+	appsDao := make([]*dao.ApplicationDAOInfo, 0)
+	for _, app := range queue.GetCopyOfApps() {
+		appsDao = append(appsDao, getApplicationDAO(app))
+	}
+
+	response, _ := json.Marshal(appsDao)
+	comp := snappy.Encode(nil, response)
+
+	defer func() {
+		if r := recover(); r != nil {
+			buildJSONErrorResponse(w, "Exceed maximum encoding size", http.StatusInternalServerError)
+		}
+	}()
+
+	if _, err := w.Write(comp); err != nil {
 		buildJSONErrorResponse(w, err.Error(), http.StatusInternalServerError)
 	}
 }
