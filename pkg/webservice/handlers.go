@@ -19,6 +19,8 @@
 package webservice
 
 import (
+	"bytes"
+	"compress/gzip"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -33,8 +35,6 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"go.uber.org/zap"
 	"gopkg.in/yaml.v3"
-
-	"github.com/golang/snappy"
 
 	"github.com/apache/yunikorn-core/pkg/common"
 	"github.com/apache/yunikorn-core/pkg/common/configs"
@@ -635,6 +635,7 @@ func getQueueApplications(w http.ResponseWriter, r *http.Request) {
 func getCompressedQueueApplications(w http.ResponseWriter, r *http.Request) {
 	writeHeaders(w)
 	w.Header().Set("Content-Type", "text/plain")
+	w.Header().Set("Content-Encoding", "gzip")
 
 	vars := httprouter.ParamsFromContext(r.Context())
 	if vars == nil {
@@ -668,15 +669,22 @@ func getCompressedQueueApplications(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		buildJSONErrorResponse(w, err.Error(), http.StatusBadRequest)
 	}
-	comp := snappy.Encode(nil, response)
 
-	defer func() {
-		if r := recover(); r != nil {
-			buildJSONErrorResponse(w, "Exceed maximum encoding size", http.StatusInternalServerError)
-		}
-	}()
+	originSize := len(response)
+	var comp bytes.Buffer
+	writer := gzip.NewWriter(&comp)
+	_, err = writer.Write(response)
+	if err != nil {
+		log.Log(log.REST).Info("Compress queue application list error", zap.Error(err))
+	}
+	err = writer.Close()
+	if err != nil {
+		log.Log(log.REST).Info("Error when closing gzip writer", zap.Error(err))
+	}
+	afterSize := len(comp.Bytes())
+	log.Log(log.REST).Debug("Before & after compress queue application data", zap.Int("Origin size: ", originSize), zap.Int("After compression: ", afterSize))
 
-	if _, err := w.Write(comp); err != nil {
+	if _, err := w.Write(comp.Bytes()); err != nil {
 		buildJSONErrorResponse(w, err.Error(), http.StatusInternalServerError)
 	}
 }
