@@ -386,9 +386,9 @@ func TestApplicationHistory(t *testing.T) {
 	var errInfo dao.YAPIError
 	err := json.Unmarshal(resp.outputBytes, &errInfo)
 	assert.NilError(t, err, unmarshalError)
-	assert.Equal(t, http.StatusNotImplemented, resp.statusCode, "app history handler returned wrong status")
+	assert.Equal(t, http.StatusInternalServerError, resp.statusCode, "app history handler returned wrong status")
 	assert.Equal(t, errInfo.Message, "Internal metrics collection is not enabled.", jsonMessageError)
-	assert.Equal(t, errInfo.StatusCode, http.StatusNotImplemented)
+	assert.Equal(t, errInfo.StatusCode, http.StatusInternalServerError)
 
 	// init should return null and thus no records
 	imHistory = history.NewInternalMetricsHistory(5)
@@ -441,9 +441,9 @@ func TestContainerHistory(t *testing.T) {
 	var errInfo dao.YAPIError
 	err := json.Unmarshal(resp.outputBytes, &errInfo)
 	assert.NilError(t, err, unmarshalError)
-	assert.Equal(t, http.StatusNotImplemented, resp.statusCode, "container history handler returned wrong status")
+	assert.Equal(t, http.StatusInternalServerError, resp.statusCode, "container history handler returned wrong status")
 	assert.Equal(t, errInfo.Message, "Internal metrics collection is not enabled.", jsonMessageError)
-	assert.Equal(t, errInfo.StatusCode, http.StatusNotImplemented)
+	assert.Equal(t, errInfo.StatusCode, http.StatusInternalServerError)
 
 	// init should return null and thus no records
 	imHistory = history.NewInternalMetricsHistory(5)
@@ -550,25 +550,6 @@ func TestGetConfigJSON(t *testing.T) {
 	configs.SetConfigMap(map[string]string{})
 }
 
-func TestBuildUpdateResponseSuccess(t *testing.T) {
-	resp := &MockResponseWriter{}
-	buildUpdateResponse(nil, resp)
-	assert.Equal(t, http.StatusOK, resp.statusCode, "Response should be OK")
-}
-
-func TestBuildUpdateResponseFailure(t *testing.T) {
-	resp := &MockResponseWriter{}
-	err := fmt.Errorf("ConfigMapUpdate failed")
-	buildUpdateResponse(err, resp)
-
-	var errInfo dao.YAPIError
-	err1 := json.Unmarshal(resp.outputBytes, &errInfo)
-	assert.NilError(t, err1, unmarshalError)
-	assert.Equal(t, http.StatusConflict, resp.statusCode, "Status code is wrong")
-	assert.Assert(t, strings.Contains(string(errInfo.Message), err.Error()), "Error message should contain the reason")
-	assert.Equal(t, errInfo.StatusCode, http.StatusConflict)
-}
-
 func TestGetClusterUtilJSON(t *testing.T) {
 	setup(t, configDefault, 1)
 
@@ -614,8 +595,8 @@ func TestGetClusterUtilJSON(t *testing.T) {
 	resAlloc2 := resources.NewResourceFromMap(map[string]resources.Quantity{siCommon.Memory: 300, siCommon.CPU: 200})
 	ask1 := objects.NewAllocationAsk("alloc-1", appID, resAlloc1)
 	ask2 := objects.NewAllocationAsk("alloc-2", appID, resAlloc2)
-	alloc1 := objects.NewAllocation("alloc-1-uuid", nodeID, ask1)
-	alloc2 := objects.NewAllocation("alloc-2-uuid", nodeID, ask2)
+	alloc1 := objects.NewAllocation(nodeID, ask1)
+	alloc2 := objects.NewAllocation(nodeID, ask2)
 	allocs := []*objects.Allocation{alloc1, alloc2}
 	err = partition.AddNode(node1, allocs)
 	assert.NilError(t, err, "add node to partition should not have failed")
@@ -680,10 +661,10 @@ func TestGetNodesUtilJSON(t *testing.T) {
 	resAlloc2 := resources.NewResourceFromMap(map[string]resources.Quantity{siCommon.Memory: 300, siCommon.CPU: 500, "GPU": 5})
 	ask1 := objects.NewAllocationAsk("alloc-1", appID, resAlloc1)
 	ask2 := objects.NewAllocationAsk("alloc-2", appID, resAlloc2)
-	allocs := []*objects.Allocation{objects.NewAllocation("alloc-1-uuid", node1ID, ask1)}
+	allocs := []*objects.Allocation{objects.NewAllocation(node1ID, ask1)}
 	err = partition.AddNode(node1, allocs)
 	assert.NilError(t, err, "add node to partition should not have failed")
-	allocs = []*objects.Allocation{objects.NewAllocation("alloc-2-uuid", node2ID, ask2)}
+	allocs = []*objects.Allocation{objects.NewAllocation(node2ID, ask2)}
 	err = partition.AddNode(node2, allocs)
 	assert.NilError(t, err, "add node to partition should not have failed")
 	err = partition.AddNode(node3, nil)
@@ -769,7 +750,7 @@ func TestGetNodeUtilisation(t *testing.T) {
 
 	resAlloc := resources.NewResourceFromMap(map[string]resources.Quantity{"first": 10})
 	ask := objects.NewAllocationAsk("alloc-1", "app", resAlloc)
-	alloc := objects.NewAllocation("alloc-1-uuid", node1ID, ask)
+	alloc := objects.NewAllocation(node1ID, ask)
 	assert.Assert(t, node1.AddAllocation(alloc), "unexpected failure adding allocation to node")
 	rootQ := partition.GetQueue("root")
 	err = rootQ.IncAllocatedResource(resAlloc, false)
@@ -786,7 +767,7 @@ func TestGetNodeUtilisation(t *testing.T) {
 	// make second type dominant by using all
 	resAlloc = resources.NewResourceFromMap(map[string]resources.Quantity{"second": 5})
 	ask = objects.NewAllocationAsk("alloc-2", "app", resAlloc)
-	alloc = objects.NewAllocation("alloc-2-uuid", node2ID, ask)
+	alloc = objects.NewAllocation(node2ID, ask)
 	assert.Assert(t, node2.AddAllocation(alloc), "unexpected failure adding allocation to node")
 	err = rootQ.IncAllocatedResource(resAlloc, false)
 	assert.NilError(t, err, "unexpected error returned setting allocated resource on queue")
@@ -866,10 +847,10 @@ func TestPartitions(t *testing.T) {
 	resAlloc2 := resources.NewResourceFromMap(map[string]resources.Quantity{siCommon.Memory: 200, siCommon.CPU: 300})
 	ask1 := objects.NewAllocationAsk("alloc-1", app6.ApplicationID, resAlloc1)
 	ask2 := objects.NewAllocationAsk("alloc-2", app3.ApplicationID, resAlloc2)
-	allocs := []*objects.Allocation{objects.NewAllocation("alloc-1-uuid", node1ID, ask1)}
+	allocs := []*objects.Allocation{objects.NewAllocation(node1ID, ask1)}
 	err := defaultPartition.AddNode(node1, allocs)
 	assert.NilError(t, err, "add node to partition should not have failed")
-	allocs = []*objects.Allocation{objects.NewAllocation("alloc-2-uuid", node2ID, ask2)}
+	allocs = []*objects.Allocation{objects.NewAllocation(node2ID, ask2)}
 	err = defaultPartition.AddNode(node2, allocs)
 	assert.NilError(t, err, "add node to partition should not have failed")
 
@@ -1018,10 +999,10 @@ func TestGetPartitionNodes(t *testing.T) {
 	resAlloc2 := resources.NewResourceFromMap(map[string]resources.Quantity{siCommon.Memory: 300, siCommon.CPU: 500})
 	ask1 := objects.NewAllocationAsk("alloc-1", appID, resAlloc1)
 	ask2 := objects.NewAllocationAsk("alloc-2", appID, resAlloc2)
-	allocs := []*objects.Allocation{objects.NewAllocation("alloc-1-uuid", node1ID, ask1)}
+	allocs := []*objects.Allocation{objects.NewAllocation(node1ID, ask1)}
 	err = partition.AddNode(node1, allocs)
 	assert.NilError(t, err, "add node to partition should not have failed")
-	allocs = []*objects.Allocation{objects.NewAllocation("alloc-2-uuid", node2ID, ask2)}
+	allocs = []*objects.Allocation{objects.NewAllocation(node2ID, ask2)}
 	err = partition.AddNode(node2, allocs)
 	assert.NilError(t, err, "add node to partition should not have failed")
 
@@ -1048,13 +1029,15 @@ func TestGetPartitionNodes(t *testing.T) {
 		if node.NodeID == node1ID {
 			assert.Equal(t, node.NodeID, node1ID)
 			assert.Equal(t, "alloc-1", node.Allocations[0].AllocationKey)
-			assert.Equal(t, "alloc-1-uuid", node.Allocations[0].UUID)
+			assert.Equal(t, "alloc-1-0", node.Allocations[0].UUID)
+			assert.Equal(t, "alloc-1-0", node.Allocations[0].AllocationID)
 			assert.DeepEqual(t, attributesOfnode1, node.Attributes)
 			assert.DeepEqual(t, map[string]int64{"memory": 50, "vcore": 30}, node.Utilized)
 		} else {
 			assert.Equal(t, node.NodeID, node2ID)
 			assert.Equal(t, "alloc-2", node.Allocations[0].AllocationKey)
-			assert.Equal(t, "alloc-2-uuid", node.Allocations[0].UUID)
+			assert.Equal(t, "alloc-2-0", node.Allocations[0].UUID)
+			assert.Equal(t, "alloc-2-0", node.Allocations[0].AllocationID)
 			assert.DeepEqual(t, attributesOfnode2, node.Attributes)
 			assert.DeepEqual(t, map[string]int64{"memory": 30, "vcore": 50}, node.Utilized)
 		}
@@ -1308,36 +1291,36 @@ func assertPartitionExists(t *testing.T, resp *MockResponseWriter) {
 	var errInfo dao.YAPIError
 	err := json.Unmarshal(resp.outputBytes, &errInfo)
 	assert.NilError(t, err, unmarshalError)
-	assert.Equal(t, http.StatusBadRequest, resp.statusCode, statusCodeError)
+	assert.Equal(t, http.StatusNotFound, resp.statusCode, statusCodeError)
 	assert.Equal(t, errInfo.Message, PartitionDoesNotExists, jsonMessageError)
-	assert.Equal(t, errInfo.StatusCode, http.StatusBadRequest)
+	assert.Equal(t, errInfo.StatusCode, http.StatusNotFound)
 }
 
 func assertQueueExists(t *testing.T, resp *MockResponseWriter) {
 	var errInfo dao.YAPIError
 	err := json.Unmarshal(resp.outputBytes, &errInfo)
 	assert.NilError(t, err, unmarshalError)
-	assert.Equal(t, http.StatusBadRequest, resp.statusCode, statusCodeError)
+	assert.Equal(t, http.StatusNotFound, resp.statusCode, statusCodeError)
 	assert.Equal(t, errInfo.Message, QueueDoesNotExists, jsonMessageError)
-	assert.Equal(t, errInfo.StatusCode, http.StatusBadRequest)
+	assert.Equal(t, errInfo.StatusCode, http.StatusNotFound)
 }
 
 func assertApplicationExists(t *testing.T, resp *MockResponseWriter) {
 	var errInfo dao.YAPIError
 	err := json.Unmarshal(resp.outputBytes, &errInfo)
 	assert.NilError(t, err, unmarshalError)
-	assert.Equal(t, http.StatusBadRequest, resp.statusCode, statusCodeError)
+	assert.Equal(t, http.StatusNotFound, resp.statusCode, statusCodeError)
 	assert.Equal(t, errInfo.Message, ApplicationDoesNotExists, jsonMessageError)
-	assert.Equal(t, errInfo.StatusCode, http.StatusBadRequest)
+	assert.Equal(t, errInfo.StatusCode, http.StatusNotFound)
 }
 
 func assertUserExists(t *testing.T, resp *MockResponseWriter) {
 	var errInfo dao.YAPIError
 	err := json.Unmarshal(resp.outputBytes, &errInfo)
 	assert.NilError(t, err, unmarshalError)
-	assert.Equal(t, http.StatusBadRequest, resp.statusCode, statusCodeError)
+	assert.Equal(t, http.StatusNotFound, resp.statusCode, statusCodeError)
 	assert.Equal(t, errInfo.Message, UserDoesNotExists, jsonMessageError)
-	assert.Equal(t, errInfo.StatusCode, http.StatusBadRequest)
+	assert.Equal(t, errInfo.StatusCode, http.StatusNotFound)
 }
 
 func assertUserNameExists(t *testing.T, resp *MockResponseWriter) {
@@ -1353,9 +1336,9 @@ func assertGroupExists(t *testing.T, resp *MockResponseWriter) {
 	var errInfo dao.YAPIError
 	err := json.Unmarshal(resp.outputBytes, &errInfo)
 	assert.NilError(t, err, unmarshalError)
-	assert.Equal(t, http.StatusBadRequest, resp.statusCode, statusCodeError)
+	assert.Equal(t, http.StatusNotFound, resp.statusCode, statusCodeError)
 	assert.Equal(t, errInfo.Message, GroupDoesNotExists, jsonMessageError)
-	assert.Equal(t, errInfo.StatusCode, http.StatusBadRequest)
+	assert.Equal(t, errInfo.StatusCode, http.StatusNotFound)
 }
 
 func assertGroupNameExists(t *testing.T, resp *MockResponseWriter) {
@@ -1371,9 +1354,9 @@ func assertNodeIDExists(t *testing.T, resp *MockResponseWriter) {
 	var errInfo dao.YAPIError
 	err := json.Unmarshal(resp.outputBytes, &errInfo)
 	assert.NilError(t, err, unmarshalError)
-	assert.Equal(t, http.StatusBadRequest, resp.statusCode, statusCodeError)
+	assert.Equal(t, http.StatusNotFound, resp.statusCode, statusCodeError)
 	assert.Equal(t, errInfo.Message, NodeDoesNotExists, jsonMessageError)
-	assert.Equal(t, errInfo.StatusCode, http.StatusBadRequest)
+	assert.Equal(t, errInfo.StatusCode, http.StatusNotFound)
 }
 
 func TestValidateQueue(t *testing.T) {
@@ -1561,7 +1544,7 @@ func TestGetEventsWhenTrackingDisabled(t *testing.T) {
 
 	req, err := http.NewRequest("GET", "/ws/v1/events/batch", strings.NewReader(""))
 	assert.NilError(t, err)
-	readIllegalRequest(t, req, "Event tracking is disabled")
+	readIllegalRequest(t, req, http.StatusInternalServerError, "Event tracking is disabled")
 }
 
 func addEvents(t *testing.T) (appEvent, nodeEvent, queueEvent *si.EventRecord) {
@@ -1627,15 +1610,15 @@ func checkIllegalBatchRequest(t *testing.T, query, msg string) {
 	t.Helper()
 	req, err := http.NewRequest("GET", "/ws/v1/events/batch?"+query, strings.NewReader(""))
 	assert.NilError(t, err)
-	readIllegalRequest(t, req, msg)
+	readIllegalRequest(t, req, http.StatusBadRequest, msg)
 }
 
-func readIllegalRequest(t *testing.T, req *http.Request, errMsg string) {
+func readIllegalRequest(t *testing.T, req *http.Request, statusCode int, errMsg string) {
 	t.Helper()
 	rr := httptest.NewRecorder()
 	handler := http.HandlerFunc(getEvents)
 	handler.ServeHTTP(rr, req)
-	assert.Equal(t, http.StatusBadRequest, rr.Code)
+	assert.Equal(t, statusCode, rr.Code)
 	jsonBytes := make([]byte, 256)
 	n, err := rr.Body.Read(jsonBytes)
 	assert.NilError(t, err, "cannot read response body")
@@ -1721,8 +1704,7 @@ func prepareUserAndGroupContext(t *testing.T) {
 	assert.NilError(t, err, "ask should have been added to app")
 
 	// add an alloc
-	uuid := "uuid-1"
-	allocInfo := objects.NewAllocation(uuid, "node-1", ask)
+	allocInfo := objects.NewAllocation("node-1", ask)
 	app.AddAllocation(allocInfo)
 	assert.Assert(t, app.IsStarting(), "Application did not return starting state after alloc: %s", app.CurrentState())
 
@@ -1738,4 +1720,68 @@ func verifyStateDumpJSON(t *testing.T, aggregated *AggregatedStateInfo) {
 	assert.Check(t, len(aggregated.LogLevel) > 0)
 	assert.Check(t, len(aggregated.Config.SchedulerConfig.Partitions) > 0)
 	assert.Check(t, len(aggregated.Config.Extra) > 0)
+}
+
+func TestCheckHealthStatusNotFound(t *testing.T) {
+	NewWebApp(&scheduler.ClusterContext{}, nil)
+	req, err := http.NewRequest("GET", "/ws/v1/scheduler/healthcheck", strings.NewReader(""))
+	assert.NilError(t, err, "Error while creating the healthcheck request")
+	resp := &MockResponseWriter{}
+	checkHealthStatus(resp, req)
+
+	var errInfo dao.YAPIError
+	err = json.Unmarshal(resp.outputBytes, &errInfo)
+	assert.NilError(t, err, unmarshalError)
+	assert.Equal(t, http.StatusNotFound, errInfo.StatusCode, statusCodeError)
+	assert.Equal(t, "Health check is not available", errInfo.Message, jsonMessageError)
+}
+
+func TestCheckHealthStatus(t *testing.T) {
+	runHealthCheckTest(t, &dao.SchedulerHealthDAOInfo{
+		Healthy: true,
+		HealthChecks: []dao.HealthCheckInfo{
+			{
+				Name:             "Scheduling errors",
+				Succeeded:        true,
+				Description:      "Check for scheduling error entries in metrics",
+				DiagnosisMessage: "There were 0 scheduling errors logged in the metrics",
+			},
+		},
+	})
+
+	runHealthCheckTest(t, &dao.SchedulerHealthDAOInfo{
+		Healthy: false,
+		HealthChecks: []dao.HealthCheckInfo{
+			{
+				Name:             "Failed nodes",
+				Succeeded:        false,
+				Description:      "Check for failed nodes entries in metrics",
+				DiagnosisMessage: "There were 1 failed nodes logged in the metrics",
+			},
+		},
+	})
+}
+
+func runHealthCheckTest(t *testing.T, expected *dao.SchedulerHealthDAOInfo) {
+	schedulerContext := &scheduler.ClusterContext{}
+	schedulerContext.SetLastHealthCheckResult(expected)
+	NewWebApp(schedulerContext, nil)
+
+	req, err := http.NewRequest("GET", "/ws/v1/scheduler/healthcheck", strings.NewReader(""))
+	assert.NilError(t, err, "Error while creating the healthcheck request")
+	resp := &MockResponseWriter{}
+	checkHealthStatus(resp, req)
+
+	var actual dao.SchedulerHealthDAOInfo
+	err = json.Unmarshal(resp.outputBytes, &actual)
+	assert.NilError(t, err, unmarshalError)
+	assert.Equal(t, expected.Healthy, actual.Healthy)
+	assert.Equal(t, len(expected.HealthChecks), len(actual.HealthChecks))
+	for i, expectedHealthCheck := range expected.HealthChecks {
+		actualHealthCheck := actual.HealthChecks[i]
+		assert.Equal(t, expectedHealthCheck.Name, actualHealthCheck.Name)
+		assert.Equal(t, expectedHealthCheck.Succeeded, actualHealthCheck.Succeeded)
+		assert.Equal(t, expectedHealthCheck.Description, actualHealthCheck.Description)
+		assert.Equal(t, expectedHealthCheck.DiagnosisMessage, actualHealthCheck.DiagnosisMessage)
+	}
 }

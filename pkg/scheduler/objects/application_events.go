@@ -58,7 +58,7 @@ func (evt *applicationEvents) sendNewAllocationEvent(alloc *Allocation) {
 	if !evt.eventSystem.IsEventTrackingEnabled() {
 		return
 	}
-	event := events.CreateAppEventRecord(evt.app.ApplicationID, common.Empty, alloc.GetUUID(), si.EventRecord_ADD, si.EventRecord_APP_ALLOC, alloc.GetAllocatedResource())
+	event := events.CreateAppEventRecord(evt.app.ApplicationID, common.Empty, alloc.GetAllocationID(), si.EventRecord_ADD, si.EventRecord_APP_ALLOC, alloc.GetAllocatedResource())
 	evt.eventSystem.AddEvent(event)
 }
 
@@ -89,7 +89,7 @@ func (evt *applicationEvents) sendRemoveAllocationEvent(alloc *Allocation, termi
 		eventChangeDetail = si.EventRecord_ALLOC_REPLACED
 	}
 
-	event := events.CreateAppEventRecord(evt.app.ApplicationID, common.Empty, alloc.GetUUID(), si.EventRecord_REMOVE, eventChangeDetail, alloc.GetAllocatedResource())
+	event := events.CreateAppEventRecord(evt.app.ApplicationID, common.Empty, alloc.GetAllocationID(), si.EventRecord_REMOVE, eventChangeDetail, alloc.GetAllocatedResource())
 	evt.eventSystem.AddEvent(event)
 }
 
@@ -117,19 +117,11 @@ func (evt *applicationEvents) sendRemoveApplicationEvent() {
 	evt.eventSystem.AddEvent(event)
 }
 
-func (evt *applicationEvents) sendRejectApplicationEvent(eventInfo string) {
-	if !evt.eventSystem.IsEventTrackingEnabled() {
-		return
-	}
-	event := events.CreateAppEventRecord(evt.app.ApplicationID, eventInfo, "", si.EventRecord_REMOVE, si.EventRecord_APP_REJECT, evt.app.allocatedResource)
-	evt.eventSystem.AddEvent(event)
-}
-
-func (evt *applicationEvents) sendStateChangeEvent(changeDetail si.EventRecord_ChangeDetail) {
+func (evt *applicationEvents) sendStateChangeEvent(changeDetail si.EventRecord_ChangeDetail, eventInfo string) {
 	if !evt.eventSystem.IsEventTrackingEnabled() || !evt.app.sendStateChangeEvents {
 		return
 	}
-	event := events.CreateAppEventRecord(evt.app.ApplicationID, "", "", si.EventRecord_SET, changeDetail, evt.app.allocatedResource)
+	event := events.CreateAppEventRecord(evt.app.ApplicationID, eventInfo, "", si.EventRecord_SET, changeDetail, evt.app.allocatedResource)
 	evt.eventSystem.AddEvent(event)
 }
 
